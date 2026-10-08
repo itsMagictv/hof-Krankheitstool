@@ -77,3 +77,11 @@ def test_keine_api_doku(client):
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_credits_auf_allen_seiten(client, admin):
+    for html in (client.get("/").text, client.get("/gesendet").text, admin.get("/admin").text):
+        assert "aszak" in html
+        assert "pixabay.com/photos/ears-of-corn-wheat-harvest-ripe-7325780" in html
+        assert "© 2026 Hof Dinkelberg GmbH" in html
+        assert 'rel="noopener noreferrer"' in html

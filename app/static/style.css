@@ -294,6 +294,47 @@ fieldset { border: 0; padding: 0; margin: 0 0 18px; min-width: 0; }
   text-align: center;
 }
 
+/* ---------- Credits ---------- */
+
+.credits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 6px;
+  font-size: .75rem;
+  line-height: 1.4;
+}
+.credits a { color: inherit; text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 2px; }
+.credits a:hover { text-decoration-thickness: 2px; }
+
+/* Auf dem Foto: dezent hell auf leicht abgedunkeltem Grund */
+body.public .credits {
+  color: rgba(255, 255, 255, .85);
+  padding: 0 16px 16px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+}
+@media (min-width: 700px) {
+  body.public .credits {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(19, 28, 8, .45);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    text-shadow: none;
+  }
+}
+
+/* Admin: hellgrauer Text auf dem beigen Hintergrund */
+body.admin-page .credits {
+  max-width: 1100px;
+  margin: -40px auto 0;
+  padding: 0 16px 20px;
+  color: var(--muted);
+}
+
 /* ---------- Gesendet-Animation ---------- */
 
 .sent { text-align: center; padding: 40px 24px; }

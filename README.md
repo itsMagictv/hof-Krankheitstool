@@ -5,7 +5,10 @@ Ein Admin-Bereich zeigt neue Meldungen an und verwaltet die Mitarbeiter-Codes.
 Das Tool dient nur der Ersterfassung – keine Auswertung, keine Historie.
 
 - **Stack:** Python 3.13 · FastAPI · Jinja2 · SQLite (ein Container, keine externe DB)
-- **Design:** angelehnt an hof-dinkelberg.de; Hintergrundbild von Pixabay (`app/static/img/bg.jpg`)
+- **Design:** angelehnt an hof-dinkelberg.de; Hintergrundbild „Ähren“ von
+  [aszak](https://pixabay.com/users/aszak-22997580/) auf
+  [Pixabay](https://pixabay.com/photos/ears-of-corn-wheat-harvest-ripe-7325780/) (`app/static/img/bg.jpg`).
+  Credits stehen unten rechts auf jeder Seite (`app/templates/_credits.html`).
 - **Datenschutz:** Meldungen werden automatisch gelöscht, sobald ihr Bis-Datum mehr als
   `RETENTION_DAYS` (Standard 30) Tage zurückliegt – auch ungelesene. Schriften, Bilder und Skripte
   liegen lokal, es werden keine externen Dienste geladen.
