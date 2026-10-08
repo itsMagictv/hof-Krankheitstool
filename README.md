@@ -39,10 +39,23 @@ Das Tool dient nur der Ersterfassung – keine Auswertung, keine Historie.
 
 ## Start
 
+Das Image liegt öffentlich in der GitHub Container Registry:
+`ghcr.io/itsmagictv/hof-krankheitstool`. Für den Betrieb werden nur `docker-compose.yml` und
+eine `.env` benötigt – kein Checkout des Codes, kein Build.
+
 ```bash
 cp .env.example .env        # ADMIN_PASSWORD und SECRET_KEY setzen!
-docker compose up -d --build
+docker compose up -d
 ```
+
+Aktualisieren auf das neueste Image:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Die Daten bleiben dabei erhalten (Volume). Statt `latest` kann in `docker-compose.yml` auch ein
+fester Commit-Tag (z. B. `:ca90e4e`) eingetragen werden, um eine Version festzuhalten.
 
 - Mitarbeiter-Seite: http://localhost:8000/
 - Admin-Bereich:     http://localhost:8000/admin
@@ -157,7 +170,9 @@ app/
   templates/       Jinja2-Templates (Mitarbeiter-Seiten, Admin)
   static/          CSS, JavaScript, Schriften, Bilder
 tests/             pytest-Tests
-.github/workflows/ CI (Tests, pip-audit, Docker-Build mit Smoke-Test)
+.github/workflows/ CI (Tests, pip-audit, Docker-Build mit Smoke-Test, Veröffentlichung)
+docker-compose.yml      Betrieb: fertiges Image aus ghcr.io
+docker-compose.dev.yml  Entwicklung: Image lokal bauen
 ```
 
 ## Tests & CI
@@ -170,11 +185,51 @@ pytest
 Der GitHub-Workflow (`.github/workflows/ci.yml`) läuft bei jedem Push auf `main`, bei Pull Requests
 und manuell. Er führt die Tests aus, prüft die Abhängigkeiten mit `pip-audit` auf bekannte
 Schwachstellen und baut das Docker-Image inkl. Smoke-Test (Health-Check, Security-Header,
-kein root, Start ohne Passwort wird verweigert).
+kein root, Start ohne Passwort wird verweigert). Auf `main` wird das getestete Image anschließend
+nach `ghcr.io` veröffentlicht (siehe oben).
 
 ## Lokale Entwicklung
+
+Ohne Docker (schnellster Weg, lädt bei Codeänderungen automatisch neu):
 
 ```bash
 python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt
 ADMIN_PASSWORD=test DB_PATH=./dev.db uvicorn app.main:app --reload
 ```
+
+Mit Docker aus dem lokalen Code bauen – `docker-compose.dev.yml` ergänzt die Standard-Konfiguration
+um `build: .` und verwendet den lokalen Image-Namen `hof-krankheitstool:dev`, damit ein
+Entwicklungs-Build nie das echte `latest` aus der Registry überschreibt:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Die Datei heißt bewusst nicht `docker-compose.override.yml` – die würde Docker automatisch laden,
+auch auf dem Server, und dort wieder bauen statt das fertige Image zu ziehen.
+
+## Neues Image veröffentlichen
+
+Automatisch: Bei jedem Push auf `main` baut der GitHub-Workflow das Image, testet es und lädt
+**genau dieses getestete Image** nach `ghcr.io` hoch – als `:latest` und mit Commit-Tag (z. B.
+`:ca90e4e`). Voraussetzung: Tests, `pip-audit` und Smoke-Test sind grün. Pull Requests
+veröffentlichen nie. Manuell neu veröffentlichen: Actions → CI → „Run workflow“ auf `main`.
+
+Danach auf dem Server: `docker compose pull && docker compose up -d`.
+
+Manuell (nur als Notlösung, z. B. wenn GitHub Actions nicht verfügbar ist) – aus einem sauberen,
+gepushten Stand von `main`, Login mit
+`gh auth token | docker login ghcr.io -u <github-user> --password-stdin` (Token mit `write:packages`):
+
+```bash
+IMG="ghcr.io/itsmagictv/hof-krankheitstool"
+SHA="$(git rev-parse --short HEAD)"
+docker build \
+  --label "org.opencontainers.image.source=https://github.com/itsMagictv/hof-Krankheitstool" \
+  --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+  -t "${IMG}:${SHA}" -t "${IMG}:latest" .
+docker push "${IMG}:${SHA}" && docker push "${IMG}:latest"
+```
+
+Wichtig: `"${IMG}:latest"` mit geschweiften Klammern schreiben – in zsh wird `$IMG:latest`
+sonst als Modifikator (`:l`, `:a` …) gelesen und der Image-Name verstümmelt.

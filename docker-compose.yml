@@ -1,7 +1,10 @@
+# Betrieb: zieht das fertige Image aus der GitHub Container Registry.
+#   Starten:      docker compose up -d
+#   Aktualisieren: docker compose pull && docker compose up -d
+# Für die Entwicklung (lokal bauen) siehe docker-compose.dev.yml.
 services:
   krankmeldung:
-    build: .
-    image: krankmeldung:latest
+    image: ghcr.io/itsmagictv/hof-krankheitstool:latest
     container_name: krankmeldung
     restart: unless-stopped
     env_file: .env

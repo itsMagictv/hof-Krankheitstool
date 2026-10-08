@@ -1,0 +1,10 @@
+# Entwicklung: baut das Image aus dem lokalen Code statt es aus der Registry zu ziehen.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Eigener lokaler Image-Name, damit ein Entwicklungs-Build nie das echte
+# ghcr.io/...:latest auf diesem Rechner überschreibt.
+services:
+  krankmeldung:
+    build: .
+    image: hof-krankheitstool:dev
+    pull_policy: build
