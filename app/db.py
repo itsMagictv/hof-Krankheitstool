@@ -140,6 +140,31 @@ def list_reports(unread: bool):
         ).fetchall()
 
 
+def get_report(report_id: int):
+    with connect() as conn:
+        return conn.execute(
+            """SELECT r.*, e.name AS employee_name
+               FROM reports r JOIN employees e ON e.id = r.employee_id
+               WHERE r.id = ?""",
+            (report_id,),
+        ).fetchone()
+
+
+def list_reports_for_employee(employee_id: int, ending_after: date):
+    """Meldungen eines Mitarbeiters, deren Bis-Datum nicht vor `ending_after` liegt."""
+    with connect() as conn:
+        return conn.execute(
+            """SELECT * FROM reports WHERE employee_id = ? AND date_to >= ?
+               ORDER BY date_from""",
+            (employee_id, ending_after.isoformat()),
+        ).fetchall()
+
+
+def delete_report(report_id: int):
+    with connect() as conn:
+        conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+
+
 def mark_read(report_id: int | None = None):
     with connect() as conn:
         if report_id is None:

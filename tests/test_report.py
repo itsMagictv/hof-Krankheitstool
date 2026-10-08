@@ -86,9 +86,10 @@ def test_ungueltige_meldung(client, employee, overrides, message):
 
 
 def test_grenzwerte_sind_erlaubt(client, employee):
-    assert submit(client, date_from=(TODAY - timedelta(days=main.MAX_PAST_DAYS)).isoformat()).status_code == 303
-    assert submit(client, date_to=TODAY.isoformat()).status_code == 303  # eintägig
-    assert submit(client, note="x" * main.MAX_NOTE_LENGTH).status_code == 303
+    ok = {"confirm_overlap": "1"}  # die Meldungen überschneiden sich untereinander
+    assert submit(client, date_from=(TODAY - timedelta(days=main.MAX_PAST_DAYS)).isoformat(), **ok).status_code == 303
+    assert submit(client, date_to=TODAY.isoformat(), **ok).status_code == 303  # eintägig
+    assert submit(client, note="x" * main.MAX_NOTE_LENGTH, **ok).status_code == 303
 
 
 def test_fehlerhafte_eingaben_bleiben_erhalten(client, employee):
@@ -104,3 +105,99 @@ def test_rate_limit_fuer_codes(client, employee):
     # Auch das Absenden ist gesperrt
     assert submit(client).status_code == 400
     assert all_reports() == []
+
+
+# --- Aktive Meldungen & Überschneidungen ----------------------------------
+
+def add_report(employee_id, start_offset, end_offset, type_="selbst"):
+    from app import db
+    db.create_report(employee_id, TODAY + timedelta(days=start_offset),
+                     TODAY + timedelta(days=end_offset), type_, "")
+
+
+def my_reports_box(html):
+    if 'id="my-reports-title"' not in html:
+        return ""
+    return html.split('id="my-reports-title"')[1].split("</section>")[0]
+
+
+def fmt(offset):
+    return (TODAY + timedelta(days=offset)).strftime("%d.%m.%Y")
+
+
+def test_keine_meldungen_keine_uebersicht(client, employee):
+    add_report(employee["id"], -5, -1)  # nur vergangene
+    assert my_reports_box(client.post("/", data={"code": "max123"}).text) == ""
+
+
+def test_aktive_und_zukuenftige_meldungen_werden_angezeigt(client, employee):
+    add_report(employee["id"], -2, 1, "arzt_analog")   # aktiv
+    add_report(employee["id"], 0, 0)                   # aktiv (nur heute)
+    add_report(employee["id"], -5, -1)                 # vorbei
+    add_report(employee["id"], 1, 2)                   # ab morgen
+    add_report(employee["id"], 5, 7, "arzt_digital")   # in 5 Tagen
+    box = my_reports_box(client.post("/", data={"code": "max123"}).text)
+    assert f"{fmt(-2)} – {fmt(1)}" in box
+    assert "Ärztliche AU – Papier" in box
+    assert f"{fmt(0)} – {fmt(0)}" in box
+    assert f"{fmt(1)} – {fmt(2)}" in box
+    assert f"{fmt(5)} – {fmt(7)}" in box
+    assert fmt(-5) not in box
+    assert box.count("is-active") == 2
+    assert box.count("is-future") == 2
+    assert "Ab morgen" in box
+    assert "In 5 Tagen" in box
+    assert "· 1 Kalendertag<" in box  # Einzahl
+    # Reihenfolge nach Beginn
+    assert box.index(fmt(-2)) < box.index(f"{fmt(0)} – {fmt(0)}") < box.index(fmt(5))
+
+
+def test_nur_eigene_meldungen_sichtbar(client, employee):
+    from app import db
+    db.create_employee("Erika", "erika777")
+    other = db.find_employee_by_code("erika777")
+    add_report(other["id"], 0, 3)
+    html = client.post("/", data={"code": "max123"}).text
+    assert my_reports_box(html) == ""
+    assert fmt(3) not in html  # auch nicht in den Daten für den Überschneidungs-Hinweis
+
+
+def test_ueberschneidung_muss_bestaetigt_werden(client, employee):
+    add_report(employee["id"], 0, 1)
+    r = submit(client)  # heute bis +2
+    assert r.status_code == 409
+    assert "bereits eine Krankmeldung vor" in r.text
+    assert f"{fmt(0)} – {fmt(1)}" in r.text
+    assert "Trotzdem absenden" in r.text
+    assert 'name="confirm_overlap" id="confirm_overlap" value="1"' in r.text
+    assert len(all_reports()) == 1
+
+    r = submit(client, confirm_overlap="1")
+    assert r.status_code == 303
+    assert len(all_reports()) == 2
+
+
+def test_ohne_ueberschneidung_keine_rueckfrage(client, employee):
+    add_report(employee["id"], -3, -1)   # endet gestern
+    add_report(employee["id"], 3, 4)     # beginnt nach dem neuen Zeitraum
+    assert submit(client).status_code == 303
+
+
+def test_ueberschneidung_an_den_raendern(client, employee):
+    add_report(employee["id"], 2, 4)     # beginnt am Bis-Tag der neuen Meldung
+    assert submit(client).status_code == 409
+
+
+def test_meldung_anderer_mitarbeiter_ist_keine_ueberschneidung(client, employee):
+    from app import db
+    db.create_employee("Erika", "erika777")
+    add_report(db.find_employee_by_code("erika777")["id"], 0, 2)
+    assert submit(client).status_code == 303
+
+
+def test_hinweis_daten_fuer_javascript(client, employee):
+    add_report(employee["id"], 0, 1)
+    html = client.post("/", data={"code": "max123"}).text
+    # JSON im data-Attribut, HTML-escaped
+    assert "data-reports=\"[{&#34;from&#34;: &#34;" in html
+    assert 'id="overlap-hint"' in html

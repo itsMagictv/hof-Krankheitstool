@@ -309,16 +309,46 @@ def index(request: Request):
     return render(request, "index.html")
 
 
+def render_form(request: Request, employee, code: str, values: dict, status_code: int = 200, **ctx):
+    today = date.today()
+    # Alle Meldungen, mit denen sich eine neue Meldung überschneiden könnte
+    reports = db.list_reports_for_employee(employee["id"], today - timedelta(days=MAX_PAST_DAYS))
+    # Aktive (heute im Zeitraum) und zukünftige Meldungen für die Übersicht
+    upcoming = [
+        {
+            "date_from": r["date_from"],
+            "date_to": r["date_to"],
+            "type": r["type"],
+            "active": r["date_from"] <= today.isoformat(),
+            "days": day_count(r["date_from"], r["date_to"]),
+            "starts_in": (date.fromisoformat(r["date_from"]) - today).days,
+        }
+        for r in reports if r["date_to"] >= today.isoformat()
+    ]
+    existing = [
+        {"from": r["date_from"], "to": r["date_to"], "text": f"{fmt_date(r['date_from'])} – {fmt_date(r['date_to'])}"}
+        for r in reports
+    ]
+    return render(
+        request, "form.html", status_code=status_code,
+        employee=employee, code=code.strip(), values=values,
+        upcoming_reports=upcoming, existing_reports=existing, **ctx,
+    )
+
+
+def overlapping(reports, d_from: date, d_to: date):
+    return [r for r in reports if r["date_from"] <= d_to.isoformat() and d_from.isoformat() <= r["date_to"]]
+
+
 @app.post("/", response_class=HTMLResponse)
 def enter_code(request: Request, code: str = Form("")):
     employee, error = check_code(request, code)
     if error:
         return render(request, "index.html", status_code=400, error=error)
     today = date.today().isoformat()
-    return render(
-        request, "form.html",
-        employee=employee, code=code.strip(),
-        values={"date_from": today, "date_to": today, "type": "", "note": ""},
+    return render_form(
+        request, employee, code,
+        {"date_from": today, "date_to": today, "type": "", "note": ""},
     )
 
 
@@ -356,18 +386,26 @@ def submit_report(
     date_to: str = Form(""),
     type: str = Form(""),
     note: str = Form(""),
+    confirm_overlap: str = Form(""),
 ):
     employee, error = check_code(request, code)
     if error:
         return render(request, "index.html", status_code=400, error=error)
 
+    values = {"date_from": date_from, "date_to": date_to, "type": type, "note": note}
     d_from, d_to, errors = validate_report(date_from, date_to, type, note)
     if errors:
-        values = {"date_from": date_from, "date_to": date_to, "type": type, "note": note}
-        return render(
-            request, "form.html", status_code=400,
-            employee=employee, code=code.strip(), values=values, errors=errors,
-        )
+        return render_form(request, employee, code, values, status_code=400, errors=errors)
+
+    # Überschneidung ist erlaubt (z. B. ärztliche AU nach Selbstmeldung), muss aber bestätigt werden.
+    # Mit JavaScript sieht der Mitarbeiter den Hinweis schon vorher und bestätigt mit dem Absenden.
+    if confirm_overlap != "1":
+        clashes = overlapping(db.list_reports_for_employee(employee["id"], d_from), d_from, d_to)
+        if clashes:
+            return render_form(
+                request, employee, code, values, status_code=409,
+                overlap=[f"{fmt_date(r['date_from'])} – {fmt_date(r['date_to'])}" for r in clashes],
+            )
 
     db.create_report(employee["id"], d_from, d_to, type, note)
     log.info("Neue Krankmeldung (Mitarbeiter-ID %s)", employee["id"])
@@ -451,6 +489,17 @@ def report_read(request: Request, report_id: int):
 def report_unread(request: Request, report_id: int):
     if is_admin(request):
         db.mark_unread(report_id)
+    return back_to_admin()
+
+
+@app.post("/admin/meldungen/{report_id:int}/loeschen")
+def report_delete(request: Request, report_id: int):
+    if is_admin(request):
+        report = db.get_report(report_id)
+        if report:
+            db.delete_report(report_id)
+            flash(request, f"Meldung von {report['employee_name']} "
+                           f"({fmt_date(report['date_from'])} – {fmt_date(report['date_to'])}) wurde gelöscht.")
     return back_to_admin()
 
 

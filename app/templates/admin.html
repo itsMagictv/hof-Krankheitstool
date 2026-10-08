@@ -23,6 +23,10 @@
       <button class="btn btn-sm btn-secondary" type="submit">Als ungelesen</button>
     </form>
     {% endif %}
+    <form method="post" action="/admin/meldungen/{{ r.id }}/loeschen"
+          data-confirm="Meldung von {{ r.employee_name }} ({{ r.date_from|date }} – {{ r.date_to|date }}) endgültig löschen?">
+      <button class="btn btn-sm btn-danger" type="submit" title="Meldung löschen">Löschen</button>
+    </form>
   </td>
 </tr>
 {% endmacro %}

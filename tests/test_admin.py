@@ -201,3 +201,36 @@ def test_loeschen_entfernt_auch_meldungen(admin, employee):
     r = admin.post(f"/admin/mitarbeiter/{employee['id']}/loeschen")
     assert all_employees() == []
     assert all_reports() == []
+
+
+def test_meldung_loeschen(admin, employee):
+    keep = add_report(employee["id"])
+    drop = add_report(employee["id"], note="falsch abgegeben")
+    r = admin.post(f"/admin/meldungen/{drop['id']}/loeschen")
+    assert [x["id"] for x in all_reports()] == [keep["id"]]
+    assert "Meldung von Max Mustermann" in r.text and "wurde gelöscht" in r.text
+
+
+def test_gelesene_meldung_loeschen(admin, employee):
+    report = add_report(employee["id"])
+    admin.post(f"/admin/meldungen/{report['id']}/gelesen")
+    assert "/loeschen" in admin.get("/admin").text
+    admin.post(f"/admin/meldungen/{report['id']}/loeschen")
+    assert all_reports() == []
+
+
+def test_unbekannte_meldung_loeschen(admin):
+    r = admin.post("/admin/meldungen/999/loeschen")
+    assert r.status_code == 200
+    assert "wurde gelöscht" not in r.text
+
+
+def test_meldung_loeschen_ohne_login(client, employee):
+    report = add_report(employee["id"])
+    client.post(f"/admin/meldungen/{report['id']}/loeschen")
+    assert len(all_reports()) == 1
+
+
+def test_loeschen_hat_sicherheitsabfrage(admin, employee):
+    add_report(employee["id"])
+    assert 'data-confirm="Meldung von Max Mustermann' in admin.get("/admin").text

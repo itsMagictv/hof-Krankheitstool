@@ -11,6 +11,26 @@
     });
   }
 
+  // Hinweis, wenn sich der Zeitraum mit einer eigenen Meldung überschneidet
+  const hint = document.getElementById("overlap-hint");
+  if (from && to && hint) {
+    const reports = JSON.parse(hint.dataset.reports || "[]");
+    const list = document.getElementById("overlap-list");
+    const confirmField = document.getElementById("confirm_overlap");
+    const check = () => {
+      const start = from.value;
+      const end = to.value || start;
+      const clashes = start ? reports.filter((r) => r.from <= end && start <= r.to) : [];
+      hint.hidden = clashes.length === 0;
+      list.textContent = clashes.map((r) => r.text).join(", ");
+      // Wer den Hinweis gesehen hat, bestätigt die Überschneidung mit dem Absenden
+      confirmField.value = clashes.length ? "1" : "";
+    };
+    from.addEventListener("change", check);
+    to.addEventListener("change", check);
+    check();
+  }
+
   // Doppeltes Absenden verhindern
   document.querySelectorAll("form[data-once]").forEach((form) => {
     form.addEventListener("submit", () => {

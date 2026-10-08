@@ -5,11 +5,38 @@
     <h1>Hallo {{ employee.name }}</h1>
     <a href="/">Nicht du?</a>
   </div>
+
+  {% if upcoming_reports %}
+  <section class="my-reports" aria-labelledby="my-reports-title">
+    <h2 class="legend" id="my-reports-title">Deine Krankmeldungen</h2>
+    <ul>
+      {% for r in upcoming_reports %}
+      <li class="my-report {{ 'is-active' if r.active else 'is-future' }}">
+        <div class="my-report-head">
+          <span class="status-pill">
+            {%- if r.active %}Aktiv
+            {%- elif r.starts_in == 1 %}Ab morgen
+            {%- else %}In {{ r.starts_in }} Tagen{% endif -%}
+          </span>
+          <span class="type-tag type-{{ r.type }}">{{ report_types.get(r.type, r.type) }}</span>
+        </div>
+        <div class="my-report-dates">
+          {{ r.date_from|date }} – {{ r.date_to|date }}
+          <span class="small">· {{ r.days }} Kalendertag{{ "e" if r.days != 1 }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
   {% if errors %}
   <div class="alert alert-error" role="alert"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
   {% endif %}
+
   <form method="post" action="/meldung" data-once>
     <input type="hidden" name="code" value="{{ code }}">
+    <input type="hidden" name="confirm_overlap" id="confirm_overlap" value="{{ '1' if overlap else '' }}">
     <div class="row">
       <div class="field">
         <label for="date_from">Krank von</label>
@@ -19,6 +46,13 @@
         <label for="date_to">bis voraussichtlich</label>
         <input type="date" id="date_to" name="date_to" value="{{ values.date_to }}" min="{{ values.date_from }}" required>
       </div>
+    </div>
+
+    <div class="alert alert-warn" id="overlap-hint" role="status"
+         data-reports="{{ existing_reports|tojson|forceescape }}" {% if not overlap %}hidden{% endif %}>
+      <strong>Für diesen Zeitraum liegt bereits eine Krankmeldung vor:</strong>
+      <span id="overlap-list">{{ overlap|join(", ") if overlap }}</span>.
+      Du kannst trotzdem absenden – z. B. wenn du jetzt eine ärztliche AU hast oder deine Krankmeldung verlängerst.
     </div>
 
     <fieldset>
@@ -38,7 +72,7 @@
       <textarea id="note" name="note" maxlength="1000">{{ values.note }}</textarea>
     </div>
 
-    <button class="btn btn-block" type="submit">Krankmeldung absenden</button>
+    <button class="btn btn-block" type="submit">{{ "Trotzdem absenden" if overlap else "Krankmeldung absenden" }}</button>
   </form>
 </div>
 {% endblock %}

@@ -2,11 +2,37 @@
 
 Kleines Web-Tool, über das sich Mitarbeiter mit einem persönlichen Code krankmelden.
 Ein Admin-Bereich zeigt neue Meldungen an und verwaltet die Mitarbeiter-Codes.
+Das Tool dient nur der Ersterfassung – keine Auswertung, keine Historie.
 
 - **Stack:** Python 3.13 · FastAPI · Jinja2 · SQLite (ein Container, keine externe DB)
 - **Design:** angelehnt an hof-dinkelberg.de; Hintergrundbild von Pixabay (`app/static/img/bg.jpg`)
 - **Datenschutz:** Meldungen werden automatisch gelöscht, sobald ihr Bis-Datum mehr als
-  `RETENTION_DAYS` (Standard 30) Tage zurückliegt. Keine externen Ressourcen (Schriften lokal).
+  `RETENTION_DAYS` (Standard 30) Tage zurückliegt – auch ungelesene. Schriften, Bilder und Skripte
+  liegen lokal, es werden keine externen Dienste geladen.
+
+## Funktionen
+
+**Mitarbeiter** (`/`)
+
+1. Persönlichen Code eingeben → Begrüßung mit Namen („Nicht du?“ führt zurück)
+2. Übersicht der eigenen **aktiven und zukünftigen Krankmeldungen**
+   (aktiv = heute liegt im Zeitraum; vergangene werden nicht angezeigt)
+3. Formular: Von (Default heute), Bis (Default heute), Art der Krankmeldung, optionale Bemerkung
+4. Überschneidet sich der Zeitraum mit einer eigenen Meldung, erscheint sofort ein Hinweis.
+   Absenden ist trotzdem möglich (z. B. ärztliche AU nach Selbstmeldung oder Verlängerung).
+   Ohne JavaScript fragt der Server einmal nach („Trotzdem absenden“).
+5. Nach dem Absenden: Bestätigung mit Animation
+
+**Admin** (`/admin`, ein gemeinsames Passwort)
+
+- Neue (ungelesene) Meldungen mit Zeitraum, Anzahl Kalendertage, Art, Bemerkung und Eingang
+- Meldungen einzeln oder alle als gelesen markieren, wieder als ungelesen markieren
+- Meldungen einzeln **löschen** (z. B. falsch abgegebene oder doppelte Meldungen)
+- Gelesene Meldungen eingeklappt einsehbar
+- Mitarbeiter anlegen, Name/Code ändern, deaktivieren (sperrt den Code) oder löschen
+  (löscht auch alle Meldungen des Mitarbeiters)
+- Mitarbeiterliste als CSV importieren/exportieren (siehe unten)
+- Die Seite lädt sich jede Minute neu, solange nichts eingetippt wird
 
 ## Start
 
@@ -20,6 +46,19 @@ docker compose up -d --build
 
 Die Datenbank liegt im Docker-Volume `krankmeldung-data` (`/data/krankmeldung.db`).
 
+## Konfiguration (`.env`)
+
+| Variable | Pflicht | Bedeutung |
+|---|---|---|
+| `ADMIN_PASSWORD` | ja | Passwort für `/admin`. Ohne startet der Container nicht. Ändern beendet alle Admin-Sessions. |
+| `SECRET_KEY` | empfohlen | Schlüssel für Session-Cookies (`openssl rand -hex 32`). Ohne gehen Sessions bei jedem Neustart verloren. |
+| `COMPANY_NAME` | | Name im Seitentitel (Standard: Hof Dinkelberg) |
+| `PUBLIC_URL` | | Öffentliche Adresse, z. B. `https://krank.example.de` – für den Link in der E-Mail und den CSRF-Schutz |
+| `SECURE_COOKIES` | | `true`, sobald das Tool nur per HTTPS erreichbar ist (setzt auch HSTS) |
+| `RETENTION_DAYS` | | Tage nach dem Bis-Datum bis zur Löschung (Standard 30) |
+| `FORWARDED_ALLOW_IPS` | | IP/Netz des Reverse Proxys (Standard `127.0.0.1`), siehe Betrieb |
+| `SMTP_*` | | Optionale E-Mail-Benachrichtigung, siehe `.env.example` |
+
 ## Betrieb
 
 - **HTTPS:** Das Tool spricht nur HTTP. Bitte hinter einen Reverse Proxy (Caddy, Traefik, nginx)
@@ -30,10 +69,27 @@ Die Datenbank liegt im Docker-Volume `krankmeldung-data` (`/data/krankmeldung.db
   erreichbar ist, sonst kann jeder seine IP fälschen und das Rate-Limit umgehen.
 - **nginx:** `proxy_set_header Host $host;` setzen – der CSRF-Schutz vergleicht die Herkunft
   (`Origin`) eines Formulars mit dem Host (alternativ `PUBLIC_URL` setzen).
-- **Rate-Limit:** 10 falsche Codes bzw. 5 falsche Admin-Passwörter pro IP → 15 Minuten gesperrt.
-- **E-Mail:** Optional. Sind `SMTP_HOST` und `SMTP_TO` gesetzt, wird bei jeder neuen Meldung eine
-  Mail mit Name und Zeitraum verschickt (ohne Art der AU und ohne Bemerkung).
-- **Backup:** `docker compose exec krankmeldung python -c "import sqlite3; sqlite3.connect('/data/krankmeldung.db').backup(sqlite3.connect('/data/backup.db'))"`
+- **E-Mail:** Sind `SMTP_HOST` und `SMTP_TO` gesetzt, wird bei jeder neuen Meldung eine Mail mit
+  Name und Zeitraum verschickt – ohne Art der AU und ohne Bemerkung. Fehler beim Versand stehen im Log.
+- **Backup:**
+
+  ```bash
+  docker compose exec krankmeldung python -c "import sqlite3; sqlite3.connect('/data/krankmeldung.db').backup(sqlite3.connect('/data/backup.db'))"
+  docker compose cp krankmeldung:/data/backup.db ./krankmeldung-backup.db
+  ```
+
+  Hinweis: Das Backup enthält Gesundheitsdaten – entsprechend sicher ablegen und ebenfalls nach
+  spätestens 30 Tagen löschen.
+
+## Regeln
+
+| Feld | Regel |
+|---|---|
+| Code | 6–64 Zeichen; erlaubt sind Buchstaben (ohne Umlaute), Ziffern und Sonderzeichen, keine Leerzeichen. Eindeutig, Groß-/Kleinschreibung egal. Nur aktive Mitarbeiter können sich melden. |
+| Von | Default heute, max. 14 Tage zurück, max. 30 Tage voraus |
+| Bis | Pflicht (Default heute), nicht vor „Von“, Zeitraum max. 1 Jahr |
+| Art | Selbst krankgemeldet (ohne AU) / Ärztliche AU – Papier / Ärztliche AU – digital (eAU) |
+| Bemerkung | optional, max. 1000 Zeichen |
 
 ## Mitarbeiter per CSV importieren / exportieren
 
@@ -48,38 +104,41 @@ Im Admin-Bereich unter „Mitarbeiter“:
   Erika Muster;erika77;nein
   ```
 
-  Kopfzeile und Spalte `Aktiv` sind optional, Komma als Trenner und Excel-Dateien in
-  Windows-Kodierung werden ebenfalls erkannt. Abgleich über den Code (Groß-/Kleinschreibung egal):
-  bekannter Code → Name/Status werden aktualisiert, neuer Code → Mitarbeiter wird angelegt.
-  Es wird **nichts gelöscht**. Enthält die Datei einen Fehler (zu kurzer Code, doppelter Code, …),
-  wird der gesamte Import abgebrochen und die fehlerhaften Zeilen werden angezeigt.
+  Kopfzeile und Spalte `Aktiv` sind optional (ja/nein, 1/0, x …). Komma als Trenner und
+  Excel-Dateien in Windows-Kodierung werden ebenfalls erkannt. Abgleich über den Code
+  (Groß-/Kleinschreibung egal): bekannter Code → Name/Status werden aktualisiert, neuer Code →
+  Mitarbeiter wird angelegt. Es wird **nichts gelöscht**. Enthält die Datei einen Fehler
+  (zu kurzer Code, doppelter Code, …), wird der gesamte Import abgebrochen und die fehlerhaften
+  Zeilen werden angezeigt. Max. Dateigröße 1 MB.
 
-  Hinweis: Ein Code lässt sich per Import nicht ändern – ein geänderter Code gilt als neuer Mitarbeiter.
-
-## Regeln
-
-| Feld | Regel |
-|---|---|
-| Code | 6–64 Zeichen, Buchstaben ohne Umlaute/Ziffern/Sonderzeichen, keine Leerzeichen, eindeutig (Groß-/Kleinschreibung egal), nur aktive Mitarbeiter |
-| Von | Default heute, max. 14 Tage zurück, max. 30 Tage voraus |
-| Bis | Pflicht (Default heute), nicht vor „Von“ |
-| Art | Selbst krankgemeldet / Ärztliche AU Papier / eAU |
-| Bemerkung | optional, max. 1000 Zeichen |
-
-Wird ein Mitarbeiter gelöscht, werden auch seine Meldungen gelöscht. Deaktivieren sperrt nur den Code.
+  Hinweis: Ein Code lässt sich per Import nicht ändern – ein geänderter Code gilt als neuer
+  Mitarbeiter. Codes daher direkt in der Tabelle ändern.
 
 ## Sicherheit
 
-- Rate-Limit pro IP für Codes und Admin-Passwort
+- Rate-Limit pro IP: 10 falsche Codes bzw. 5 falsche Admin-Passwörter → 15 Minuten gesperrt
 - Admin-Session als signiertes Cookie (`HttpOnly`, `SameSite=strict`, 8 h). Wird `ADMIN_PASSWORD`
   geändert, sind alle bestehenden Sessions sofort ungültig.
 - CSRF: zusätzlich zu `SameSite` werden POSTs mit fremder `Origin`/`Referer` abgelehnt
 - Strikte Content-Security-Policy (kein Inline-JavaScript), `X-Frame-Options: DENY`,
-  `Referrer-Policy: no-referrer`, `Cache-Control: no-store` für alle Seiten (Gesundheitsdaten
-  landen nicht im Browser-Cache)
+  `Referrer-Policy: no-referrer`, HSTS bei `SECURE_COOKIES=true`
+- `Cache-Control: no-store` für alle Seiten – Gesundheitsdaten landen nicht im Browser-Cache
 - Requests > 1 MB werden abgewiesen, bevor sie eingelesen werden
 - CSV-Export schützt vor Formel-Injection in Excel (`=`, `+`, `-`, `@` werden mit `'` maskiert)
+- Ein Mitarbeiter sieht nur seine eigenen Meldungen – allerdings jeder, der seinen Code kennt
 - Container läuft als unprivilegierter Benutzer
+
+## Projektstruktur
+
+```
+app/
+  main.py          Routen, Validierung, Middleware (Security-Header, CSRF, Größenlimit)
+  db.py            SQLite-Schema und Datenbankzugriff, Löschfrist
+  templates/       Jinja2-Templates (Mitarbeiter-Seiten, Admin)
+  static/          CSS, JavaScript, Schriften, Bilder
+tests/             pytest-Tests
+.github/workflows/ CI (Tests, pip-audit, Docker-Build mit Smoke-Test)
+```
 
 ## Tests & CI
 
@@ -88,12 +147,14 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Der GitHub-Workflow (`.github/workflows/ci.yml`) führt bei jedem Push/PR die Tests aus, prüft die
-Abhängigkeiten mit `pip-audit` auf bekannte Schwachstellen und baut das Docker-Image inkl. Smoke-Test.
+Der GitHub-Workflow (`.github/workflows/ci.yml`) läuft bei jedem Push auf `main`, bei Pull Requests
+und manuell. Er führt die Tests aus, prüft die Abhängigkeiten mit `pip-audit` auf bekannte
+Schwachstellen und baut das Docker-Image inkl. Smoke-Test (Health-Check, Security-Header,
+kein root, Start ohne Passwort wird verweigert).
 
 ## Lokale Entwicklung
 
 ```bash
-python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt
 ADMIN_PASSWORD=test DB_PATH=./dev.db uvicorn app.main:app --reload
 ```
