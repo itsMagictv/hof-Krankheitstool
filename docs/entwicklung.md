@@ -18,6 +18,32 @@ docker-compose.yml      Betrieb: fertiges Image aus ghcr.io
 docker-compose.dev.yml  Entwicklung: Image lokal bauen
 ```
 
+## Branches
+
+| Branch | Zweck |
+|---|---|
+| `dev` | Standard-Branch. Hier wird entwickelt, jeder Push wird getestet, aber **nicht** veröffentlicht. |
+| `main` | Veröffentlichter Stand. Jeder Stand auf `main` wird automatisch als `:latest` ausgeliefert. |
+
+`main` ist geschützt: Änderungen nur per Pull Request von `dev`, und nur wenn die Checks „Tests“
+und „Docker-Image“ grün sind. Direkte Pushes und Force-Pushes auf `main` sind gesperrt – auch für
+Admins.
+
+Ablauf:
+
+```bash
+git switch dev && git pull
+# … entwickeln, committen …
+git push                                   # CI testet den Stand auf dev
+# Feature fertig → Release per Pull Request:
+gh pr create --base main --head dev --title "Release: …"
+gh pr merge --merge                        # sobald die Checks grün sind
+```
+
+Nach dem Merge veröffentlicht die CI das Image, auf dem Server dann
+`docker compose pull && docker compose up -d`. Größere Features können auch auf eigenen
+Branches entstehen und per Pull Request zuerst nach `dev` gehen.
+
 ## Lokal starten
 
 Voraussetzung: Python 3.13 (wie im Docker-Image).
@@ -57,7 +83,7 @@ Requests und manuell:
 
 ## Neues Image veröffentlichen
 
-**Automatisch:** Bei jedem Push auf `main` lädt der Workflow **genau das getestete Image** nach
+**Automatisch:** Bei jedem Merge bzw. Push auf `main` lädt der Workflow **genau das getestete Image** nach
 `ghcr.io` hoch – als `:latest` und mit Commit-Tag (z. B. `:ca90e4e`). Voraussetzung: alle
 vorherigen Schritte sind grün. Pull Requests veröffentlichen nie. Erneut veröffentlichen:
 Actions → CI → „Run workflow“ auf `main`.
