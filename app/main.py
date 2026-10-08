@@ -2,6 +2,7 @@ import asyncio
 import csv
 import hashlib
 import hmac
+import ipaddress
 import io
 import logging
 import os
@@ -37,6 +38,8 @@ SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 COMPANY_NAME = os.environ.get("COMPANY_NAME", "Hof Dinkelberg")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
+# Sicherheitsereignisse (Admin-Login, Sperren) mit gekürzter IP protokollieren
+SECURITY_LOG = os.environ.get("SECURITY_LOG", "true").strip().lower() not in ("false", "0", "no", "nein", "off")
 MAX_PAST_DAYS = 14      # "Von" darf höchstens so weit in der Vergangenheit liegen
 MAX_FUTURE_DAYS = 30    # ... und höchstens so weit in der Zukunft
 MAX_DURATION_DAYS = 366
@@ -80,9 +83,12 @@ class RateLimiter:
             q = self._prune(key)
             return q is not None and len(q) >= self.max_failures
 
-    def fail(self, key: str):
+    def fail(self, key: str) -> bool:
+        """Zählt einen Fehlversuch. Gibt True zurück, wenn die Sperre damit gerade greift."""
         with self.lock:
-            self.failures.setdefault(key, deque()).append(time.monotonic())
+            q = self.failures.setdefault(key, deque())
+            q.append(time.monotonic())
+            return len(q) == self.max_failures
 
     def reset(self):
         with self.lock:
@@ -97,6 +103,30 @@ def client_ip(request: Request) -> str:
     # Hinter einem Reverse Proxy setzt uvicorn (--proxy-headers) hier die echte IP,
     # sofern der Proxy in FORWARDED_ALLOW_IPS steht.
     return request.client.host if request.client else "unknown"
+
+
+# --- Sicherheits-Log -------------------------------------------------------
+
+security_log = logging.getLogger("krankmeldung.security")
+
+
+def anonymize_ip(ip: str) -> str:
+    """Kürzt die IP, damit sich Einträge keiner Person zuordnen lassen:
+    IPv4 ohne letztes Oktett, IPv6 nur das /48-Präfix."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return "unbekannt"
+    if addr.version == 4:
+        return ".".join(ip.split(".")[:3]) + ".xxx"
+    prefix = ipaddress.ip_network(f"{addr}/48", strict=False).network_address
+    return f"{prefix.compressed.rstrip(':')}::xxx"
+
+
+def log_security_event(request: Request, message: str, level: int = logging.WARNING):
+    # Nie Codes, Passwörter oder Namen loggen – nur Ereignis und gekürzte IP.
+    if SECURITY_LOG:
+        security_log.log(level, "SICHERHEIT %s (IP %s)", message, anonymize_ip(client_ip(request)))
 
 
 # --- E-Mail (optional) ----------------------------------------------------
@@ -300,7 +330,8 @@ def check_code(request: Request, code: str):
     code = code.strip()
     employee = db.find_employee_by_code(code) if 0 < len(code) <= MAX_CODE_LENGTH else None
     if employee is None:
-        code_limiter.fail(ip)
+        if code_limiter.fail(ip):
+            log_security_event(request, "Zu viele falsche Mitarbeiter-Codes – IP für 15 Minuten gesperrt")
         return None, "Dieser Code ist unbekannt. Bitte prüfe deine Eingabe."
     return employee, None
 
@@ -476,10 +507,14 @@ def admin_login(request: Request, password: str = Form("")):
         return render(request, "admin_login.html", status_code=429,
                       error="Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.")
     if not hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
-        login_limiter.fail(ip)
+        if login_limiter.fail(ip):
+            log_security_event(request, "Zu viele falsche Admin-Passwörter – IP für 15 Minuten gesperrt")
+        else:
+            log_security_event(request, "Admin-Login fehlgeschlagen")
         return render(request, "admin_login.html", status_code=401, error="Falsches Passwort.")
     request.session.clear()
     request.session["admin"] = admin_token()
+    log_security_event(request, "Admin-Login erfolgreich", logging.INFO)
     return back_to_admin()
 
 

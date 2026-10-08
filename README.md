@@ -60,6 +60,7 @@ Die Datenbank liegt im Docker-Volume `krankmeldung-data` (`/data/krankmeldung.db
 | `SECURE_COOKIES` | | `true`, sobald das Tool nur per HTTPS erreichbar ist (setzt auch HSTS) |
 | `RETENTION_DAYS` | | Tage nach dem Bis-Datum bis zur Löschung (Standard 30) |
 | `FORWARDED_ALLOW_IPS` | | IP/Netz des Reverse Proxys (Standard `127.0.0.1`), siehe Betrieb |
+| `SECURITY_LOG` | | Sicherheitsereignisse loggen (Standard `true`), siehe Logging |
 | `SMTP_*` | | Optionale E-Mail-Benachrichtigung, siehe `.env.example` |
 
 ## Betrieb
@@ -74,6 +75,22 @@ Die Datenbank liegt im Docker-Volume `krankmeldung-data` (`/data/krankmeldung.db
   (`Origin`) eines Formulars mit dem Host (alternativ `PUBLIC_URL` setzen).
 - **E-Mail:** Sind `SMTP_HOST` und `SMTP_TO` gesetzt, wird bei jeder neuen Meldung eine Mail mit
   Name und Zeitraum verschickt – ohne Art der AU und ohne Bemerkung. Fehler beim Versand stehen im Log.
+- **Logging:** Das Container-Log enthält bewusst keine personenbezogenen Daten, denn es unterliegt
+  nicht der Löschfrist. Das Zugriffslog von uvicorn ist abgeschaltet (IP + Zeitpunkt einer
+  Krankmeldung wären personenbezogen). Neue Meldungen erscheinen nur als „Neue Krankmeldung
+  eingegangen“. Mit `SECURITY_LOG=true` (Standard) werden zusätzlich Sicherheitsereignisse mit
+  gekürzter IP (`10.0.3.xxx`) protokolliert:
+
+  ```
+  SICHERHEIT Admin-Login erfolgreich (IP 10.0.3.xxx)
+  SICHERHEIT Admin-Login fehlgeschlagen (IP 10.0.3.xxx)
+  SICHERHEIT Zu viele falsche Admin-Passwörter – IP für 15 Minuten gesperrt (IP 10.0.3.xxx)
+  SICHERHEIT Zu viele falsche Mitarbeiter-Codes – IP für 15 Minuten gesperrt (IP 10.0.3.xxx)
+  ```
+
+  Einzelne falsche Codes (Tippfehler) werden nicht geloggt. Die Logs sind in `docker-compose.yml`
+  auf 2 × 5 MB begrenzt (`docker compose logs krankmeldung`). Hinweis: Ein vorgeschalteter Reverse
+  Proxy schreibt meist ein eigenes Zugriffslog – dort ebenfalls abschalten oder IPs kürzen.
 - **Backup:**
 
   ```bash
