@@ -234,3 +234,13 @@ def test_meldung_loeschen_ohne_login(client, employee):
 def test_loeschen_hat_sicherheitsabfrage(admin, employee):
     add_report(employee["id"])
     assert 'data-confirm="Meldung von Max Mustermann' in admin.get("/admin").text
+
+
+def test_session_enthaelt_kein_schnelles_passwort_hash(admin):
+    import base64, hashlib, hmac, json
+    # Das Session-Cookie ist nur signiert, nicht verschlüsselt – also lesbar
+    payload = admin.cookies.get("km_session").split(".")[0]
+    data = json.loads(base64.b64decode(payload + "=" * (-len(payload) % 4)))
+    weak = hmac.new(main.SECRET_KEY.encode(), main.ADMIN_PASSWORD.encode(), hashlib.sha256).hexdigest()
+    assert data["admin"] != weak
+    assert main.ADMIN_PASSWORD not in json.dumps(data)

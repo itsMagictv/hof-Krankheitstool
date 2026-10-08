@@ -16,6 +16,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -408,7 +409,8 @@ def submit_report(
             )
 
     db.create_report(employee["id"], d_from, d_to, type, note)
-    log.info("Neue Krankmeldung (Mitarbeiter-ID %s)", employee["id"])
+    # Bewusst ohne Mitarbeiterbezug: Logs unterliegen nicht der Löschfrist.
+    log.info("Neue Krankmeldung eingegangen")
     send_notification(employee["name"], d_from, d_to)
     return RedirectResponse("/gesendet", status_code=303)
 
@@ -420,9 +422,18 @@ def sent(request: Request):
 
 # --- Admin ----------------------------------------------------------------
 
+@lru_cache(maxsize=4)
+def _derive_admin_token(secret_key: str, password: str) -> str:
+    # Langsame Schlüsselableitung (PBKDF2), weil der Token im – nur signierten, nicht
+    # verschlüsselten – Session-Cookie steht. Wird nur einmal pro Passwort berechnet.
+    return hashlib.pbkdf2_hmac(
+        "sha256", password.encode(), b"krankmeldung-admin:" + secret_key.encode(), 600_000,
+    ).hex()
+
+
 def admin_token() -> str:
     # Hängt vom Passwort ab: Wird ADMIN_PASSWORD geändert, sind alle Sessions ungültig.
-    return hmac.new(SECRET_KEY.encode(), ADMIN_PASSWORD.encode(), hashlib.sha256).hexdigest()
+    return _derive_admin_token(SECRET_KEY, ADMIN_PASSWORD)
 
 
 def is_admin(request: Request) -> bool:

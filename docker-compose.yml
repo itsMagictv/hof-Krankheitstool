@@ -9,6 +9,11 @@ services:
       - "8000:8000"
     volumes:
       - krankmeldung-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   krankmeldung-data:

@@ -201,3 +201,13 @@ def test_hinweis_daten_fuer_javascript(client, employee):
     # JSON im data-Attribut, HTML-escaped
     assert "data-reports=\"[{&#34;from&#34;: &#34;" in html
     assert 'id="overlap-hint"' in html
+
+
+def test_log_enthaelt_keine_mitarbeiterdaten(client, employee, caplog):
+    # Logs unterliegen nicht der Löschfrist – sie dürfen keinen Personenbezug haben
+    with caplog.at_level("DEBUG", logger="krankmeldung"):
+        assert submit(client, note="Bemerkung-XYZ").status_code == 303
+    text = caplog.text
+    assert "Neue Krankmeldung eingegangen" in text
+    for secret in ("Max", "max123", "Bemerkung-XYZ", f"ID {employee['id']}"):
+        assert secret.lower() not in text.lower()
