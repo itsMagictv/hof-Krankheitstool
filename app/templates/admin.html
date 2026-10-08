@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% macro report_row(r, unread) %}
+<tr>
+  <td class="name">{{ r.employee_name }}</td>
+  <td data-label="Zeitraum">
+    {{ r.date_from|date }} – {{ r.date_to|date }}
+    {% set days = day_count(r.date_from, r.date_to) %}
+    <div class="small">{{ days }} Kalendertag{{ "e" if days != 1 }}</div>
+  </td>
+  <td data-label="Art"><span class="type-tag type-{{ r.type }}">{{ report_types.get(r.type, r.type) }}</span></td>
+  <td data-label="Bemerkung"><div class="note">{{ r.note or "–" }}</div></td>
+  <td data-label="{{ 'Eingang' if unread else 'Gelesen' }}" class="small">
+    {{ (r.created_at if unread else r.read_at)|datetime }}
+  </td>
+  <td class="actions">
+    {% if unread %}
+    <form method="post" action="/admin/meldungen/{{ r.id }}/gelesen">
+      <button class="btn btn-sm" type="submit">✓ Gelesen</button>
+    </form>
+    {% else %}
+    <form method="post" action="/admin/meldungen/{{ r.id }}/ungelesen">
+      <button class="btn btn-sm btn-secondary" type="submit">Als ungelesen</button>
+    </form>
+    {% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+{% block body_class %}admin-page{% endblock %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="title">
+      <img src="{{ url_for('static', path='img/logo.png') }}" alt="{{ company_name }}">
+      <div>
+        <div class="eyebrow">{{ company_name }}</div>
+        <div class="heading">Krankmeldungen</div>
+      </div>
+    </div>
+    <form method="post" action="/admin/logout">
+      <button class="btn btn-sm btn-ghost" type="submit">Abmelden</button>
+    </form>
+  </div>
+</header>
+
+<main class="admin">
+  {% if flash %}
+  <div class="alert alert-{{ flash.kind }}" role="status">
+    {{ flash.message }}
+    {% if flash.details %}<ul>{% for d in flash.details %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endif %}
+
+  <section>
+    <div class="section-head">
+      <h2>Neue Meldungen
+        <span class="badge {{ 'badge-muted' if not unread }}">{{ unread|length }}</span>
+      </h2>
+      {% if unread|length > 1 %}
+      <form method="post" action="/admin/meldungen/alle-gelesen">
+        <button class="btn btn-sm btn-secondary" type="submit">Alle als gelesen markieren</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="card">
+      {% if unread %}
+      <table>
+        <thead><tr><th>Mitarbeiter</th><th>Zeitraum</th><th>Art</th><th>Bemerkung</th><th>Eingang</th><th></th></tr></thead>
+        <tbody>{% for r in unread %}{{ report_row(r, true) }}{% endfor %}</tbody>
+      </table>
+      {% else %}
+      <p class="empty">Keine neuen Krankmeldungen.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section>
+    <details>
+      <summary>Gelesene Meldungen <span class="badge badge-muted">{{ read|length }}</span></summary>
+      <p class="small">Meldungen werden {{ retention_days }} Tage nach ihrem Bis-Datum automatisch gelöscht.</p>
+      <div class="card">
+        {% if read %}
+        <table>
+          <thead><tr><th>Mitarbeiter</th><th>Zeitraum</th><th>Art</th><th>Bemerkung</th><th>Gelesen</th><th></th></tr></thead>
+          <tbody>{% for r in read %}{{ report_row(r, false) }}{% endfor %}</tbody>
+        </table>
+        {% else %}
+        <p class="empty">Keine gelesenen Meldungen.</p>
+        {% endif %}
+      </div>
+    </details>
+  </section>
+
+  <section id="mitarbeiter">
+    <div class="section-head">
+      <h2>Mitarbeiter <span class="badge badge-muted">{{ employees|length }}</span></h2>
+      <div class="csv-tools">
+        <a class="btn btn-sm btn-secondary" href="/admin/mitarbeiter/export.csv" download>CSV exportieren</a>
+        <form method="post" action="/admin/mitarbeiter/import" enctype="multipart/form-data" id="import-form">
+          <label class="btn btn-sm btn-secondary">
+            CSV importieren
+            <input type="file" name="file" accept=".csv,text/csv" hidden data-autosubmit>
+          </label>
+        </form>
+      </div>
+    </div>
+    <p class="small csv-hint">
+      CSV-Format: <code>Name;Code;Aktiv</code> (Aktiv optional: ja/nein, Kopfzeile optional).
+      Beim Import werden Mitarbeiter über den Code abgeglichen: bekannte werden aktualisiert, neue angelegt –
+      gelöscht wird nichts. Enthält eine Zeile einen Fehler, wird nichts übernommen.
+    </p>
+    <div class="card">
+      <h3>Neuen Mitarbeiter anlegen</h3>
+      <form method="post" action="/admin/mitarbeiter" class="inline-form">
+        <div class="field">
+          <label for="new-name">Name</label>
+          <input type="text" id="new-name" name="name" required value="{{ draft.name if draft else '' }}">
+        </div>
+        <div class="field">
+          <label for="new-code">Code <span class="hint">(mind. {{ min_code_length }} Zeichen, eindeutig)</span></label>
+          <input type="text" id="new-code" name="code" required minlength="{{ min_code_length }}" autocomplete="off" value="{{ draft.code if draft else '' }}">
+        </div>
+        <button class="btn" type="submit">Anlegen</button>
+      </form>
+    </div>
+
+    <div class="card mt">
+      {% if employees %}
+      <table>
+        <thead><tr><th>Name / Code</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for e in employees %}
+        <tr class="{{ '' if e.active else 'inactive' }}">
+          <td>
+            <form method="post" action="/admin/mitarbeiter/{{ e.id }}" class="emp-edit">
+              <input type="text" name="name" value="{{ e.name }}" required aria-label="Name">
+              <input type="text" name="code" value="{{ e.code }}" required minlength="{{ min_code_length }}" autocomplete="off" aria-label="Code">
+              <button class="btn btn-sm btn-secondary" type="submit">Speichern</button>
+            </form>
+          </td>
+          <td data-label="Status">{{ "aktiv" if e.active else "deaktiviert" }}</td>
+          <td class="actions">
+            <form method="post" action="/admin/mitarbeiter/{{ e.id }}/aktiv">
+              <button class="btn btn-sm btn-secondary" type="submit">{{ "Deaktivieren" if e.active else "Aktivieren" }}</button>
+            </form>
+            <form method="post" action="/admin/mitarbeiter/{{ e.id }}/loeschen"
+                  data-confirm="{{ e.name }} und alle zugehörigen Meldungen endgültig löschen?">
+              <button class="btn btn-sm btn-danger" type="submit">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Noch keine Mitarbeiter angelegt.</p>
+      {% endif %}
+    </div>
+  </section>
+</main>
+{% endblock %}

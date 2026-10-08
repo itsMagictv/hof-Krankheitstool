@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Gesendet{% endblock %}
+{% block content %}
+<div class="card sent">
+  <svg class="check" viewBox="0 0 104 104" aria-hidden="true">
+    <circle class="check-fill" cx="52" cy="52" r="46"/>
+    <circle class="check-circle" cx="52" cy="52" r="48"/>
+    <path class="check-mark" d="M32 54 l13 13 l27 -29"/>
+  </svg>
+  <h1>Krankmeldung gesendet</h1>
+  <p class="lead">Danke für deine Meldung. Wir wünschen dir gute Besserung!</p>
+  <a class="btn btn-secondary" href="/">Zur Startseite</a>
+</div>
+{% endblock %}

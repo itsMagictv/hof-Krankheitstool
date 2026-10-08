@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}Krankmeldung{% endblock %}{% if company_name %} – {{ company_name }}{% endif %}</title>
+  <link rel="icon" href="{{ url_for('static', path='img/icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body class="{% block body_class %}public{% endblock %}">
+{% block body %}
+<main class="page">
+  <a class="brand" href="/">
+    <img src="{{ url_for('static', path='img/logo.png') }}" alt="{{ company_name }}">
+    <span>Krankmeldung</span>
+  </a>
+  {% block content %}{% endblock %}
+</main>
+{% endblock %}
+<script src="{{ url_for('static', path='app.js') }}" defer></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+services:
+  krankmeldung:
+    build: .
+    image: krankmeldung:latest
+    container_name: krankmeldung
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - krankmeldung-data:/data
+
+volumes:
+  krankmeldung-data:

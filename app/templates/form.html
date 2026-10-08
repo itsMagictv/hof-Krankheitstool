@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="greeting">
+    <h1>Hallo {{ employee.name }}</h1>
+    <a href="/">Nicht du?</a>
+  </div>
+  {% if errors %}
+  <div class="alert alert-error" role="alert"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  <form method="post" action="/meldung" data-once>
+    <input type="hidden" name="code" value="{{ code }}">
+    <div class="row">
+      <div class="field">
+        <label for="date_from">Krank von</label>
+        <input type="date" id="date_from" name="date_from" value="{{ values.date_from }}" required>
+      </div>
+      <div class="field">
+        <label for="date_to">bis voraussichtlich</label>
+        <input type="date" id="date_to" name="date_to" value="{{ values.date_to }}" min="{{ values.date_from }}" required>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend class="legend">Art der Krankmeldung</legend>
+      <div class="choices">
+        {% for key, label in report_types.items() %}
+        <label class="choice">
+          <input type="radio" name="type" value="{{ key }}" {% if values.type == key %}checked{% endif %} required>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label for="note">Bemerkung <span class="hint">(optional – bitte keine Diagnose angeben)</span></label>
+      <textarea id="note" name="note" maxlength="1000">{{ values.note }}</textarea>
+    </div>
+
+    <button class="btn btn-block" type="submit">Krankmeldung absenden</button>
+  </form>
+</div>
+{% endblock %}

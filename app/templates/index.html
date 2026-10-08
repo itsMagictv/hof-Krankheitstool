@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Krankmeldung</h1>
+  <p class="lead">Bitte gib deinen persönlichen Code ein, um dich krankzumelden.</p>
+  {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/">
+    <div class="field">
+      <label for="code">Persönlicher Code</label>
+      <input class="code-input" type="text" id="code" name="code" required
+             autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+    </div>
+    <button class="btn btn-block" type="submit">Weiter</button>
+  </form>
+</div>
+<p class="footer-note">Code vergessen? Bitte wende dich an die Personalabteilung.</p>
+{% endblock %}
